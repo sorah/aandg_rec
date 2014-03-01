@@ -1,12 +1,18 @@
 GEM
   remote: https://rubygems.org/
   specs:
+    fluent-logger (0.4.7)
+      msgpack (>= 0.4.4, < 0.6.0, != 0.5.3, != 0.5.2, != 0.5.1, != 0.5.0)
+      yajl-ruby (~> 1.0)
     mini_portile (0.5.2)
+    msgpack (0.5.8)
     nokogiri (1.6.1)
       mini_portile (~> 0.5.0)
+    yajl-ruby (1.2.0)
 
 PLATFORMS
   ruby
 
 DEPENDENCIES
+  fluent-logger
   nokogiri

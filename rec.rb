@@ -7,6 +7,12 @@ require 'bundler/setup'
 require 'uri'
 require 'open-uri'
 require 'nokogiri'
+require 'fluent-logger'
+
+def tweet(message)
+  log = Fluent::Logger::FluentLogger.new("twitter", :host=>'localhost', :port=>24224)
+  log.post("aandg", message: message)
+end
 
 class Program
   def self.acquire
@@ -129,6 +135,7 @@ Thread.new { # acquire program information after few seconds
   prog = Program.acquire
   puts "  * #{prog.name}"
   puts "  * #{prog.text.inspect}"
+  tweet "aandg.#{name}.watching: #{prog.name}"
 }
 
 servers = FmsList.acquire.available_servers
@@ -153,6 +160,7 @@ servers.each do |server|
     ].map(&:to_s)
     record_start = Time.now
     puts "==> #{cmd.join(' ')}"
+    tweet "aandg.#{name}.start: #{stop} seconds (try:#{try})"
 
     status = nil
     out = ""
@@ -185,12 +193,16 @@ servers.each do |server|
     elapsed = Time.now - record_start
     if status && !status.success?
       puts "  * May be fail"
+      tweet "aandg.#{name}.fail: #{pubdate.rfc2822}"
     elsif /^Download may be incomplete/ === out
       puts "  * Download may be incomplete"
+      tweet "aandg.#{name}.incomplete: #{pubdate.rfc2822}"
     elsif elapsed < seconds-ALLOW_EARLY_EXIT
       puts "  * Exited earlier (#{elapsed} seconds elapsed, #{stop} seconds expected)"
+      tweet "aandg.#{name}.early-exit: #{pubdate.rfc2822}; #{elapsed} seconds elapsed / #{stop} seconds expected"
     else
       puts "  * Done!"
+      tweet "aandg.#{name}.watched: #{pubdate.rfc2822}"
       break
     end
 
@@ -276,5 +288,10 @@ builder = Nokogiri::XML::Builder.new do |xml|
 end
 
 File.write rss_path, builder.to_xml
+if prog
+  tweet "aandg.#{name}.done: #{prog.name} #{pubdate.rfc2822}"
+else
+  tweet "aandg.#{name}.done: #{pubdate.rfc2822}"
+end
 
 
