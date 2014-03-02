@@ -111,7 +111,7 @@ rss_path = File.join(target_dir, 'index.xml')
 if start
   h,m = start[0,2].to_i, start[2,2].to_i if start
   now = Time.now
-  time = Time.new(now.year, now.month, now.day, h, m)
+  time = Time.new(now.year, now.month, now.day, h, m, 0)
   time += 86400 if time < now
 
   waittime = time - MARGIN_BEFORE
