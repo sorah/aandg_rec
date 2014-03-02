@@ -254,6 +254,7 @@ builder = Nokogiri::XML::Builder.new do |xml|
       xml.language 'ja'
 
       m4a_paths.reverse.each_with_index do |m4a_path,i|
+        next unless File.exists?(m4a_path)
         xml.item {
           xml.title "#{pubdate.strftime("%Y/%m/%d %H:%M")}#{0 < i ? "-#{i+1}" : ""} #{prog.name} - #{prog.personality}"
           xml.description prog.text.gsub(/<.+?>/,'')
