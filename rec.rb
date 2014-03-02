@@ -135,7 +135,7 @@ Thread.new { # acquire program information after few seconds
   prog = Program.acquire
   puts "  * #{prog.name}"
   puts "  * #{prog.text.inspect}"
-  tweet "aandg.#{name}.watching: #{prog.name}"
+  tweet "aandg.#{name}.watching: #{prog.name} (#{pubdate.to_i})"
 }
 
 servers = FmsList.acquire.available_servers
