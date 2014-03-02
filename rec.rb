@@ -202,7 +202,12 @@ servers.each do |server|
       tweet "aandg.#{name}.early-exit: #{pubdate.rfc2822}; #{elapsed} seconds elapsed / #{stop} seconds expected"
     else
       puts "  * Done!"
-      tweet "aandg.#{name}.watched: #{pubdate.rfc2822}"
+      if prog
+        tweet "aandg.#{name}.watched: #{prog.name} (#{pubdate.rfc2822})"
+      else
+        tweet "aandg.#{name}.watched: #{pubdate.rfc2822}"
+      end
+
       break
     end
 
