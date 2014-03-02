@@ -203,7 +203,7 @@ servers.each do |server|
     else
       puts "  * Done!"
       if prog
-        tweet "aandg.#{name}.watched: #{prog.name} (#{pubdate.rfc2822})"
+        tweet "aandg.#{name}.watched: #{prog.name} (#{pubdate.to_i})"
       else
         tweet "aandg.#{name}.watched: #{pubdate.rfc2822}"
       end
@@ -295,7 +295,7 @@ end
 
 File.write rss_path, builder.to_xml
 if prog
-  tweet "aandg.#{name}.done: #{prog.name} (#{pubdate.rfc2822})"
+  tweet "aandg.#{name}.done: #{prog.name} (#{pubdate.to_i})"
 else
   tweet "aandg.#{name}.done: #{pubdate.rfc2822}"
 end
