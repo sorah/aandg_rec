@@ -295,7 +295,7 @@ end
 
 File.write rss_path, builder.to_xml
 if prog
-  tweet "aandg.#{name}.done: #{prog.name} #{pubdate.rfc2822}"
+  tweet "aandg.#{name}.done: #{prog.name} (#{pubdate.rfc2822})"
 else
   tweet "aandg.#{name}.done: #{pubdate.rfc2822}"
 end
