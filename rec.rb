@@ -160,7 +160,7 @@ servers.each do |server|
     ].map(&:to_s)
     record_start = Time.now
     puts "==> #{cmd.join(' ')}"
-    tweet "aandg.#{name}.start: #{stop} seconds (try:#{try})"
+    tweet "aandg.#{name}.start: #{stop} seconds (try:#{try}, #{pubdate})"
 
     status = nil
     out = ""
