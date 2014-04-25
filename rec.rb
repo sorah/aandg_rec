@@ -216,16 +216,16 @@ servers.each do |server|
   end || break
 end
 
-m4a_paths = flv_paths.map do |flv_path|
-  m4a_path = flv_path.sub(/\.flv$/, '.m4a')
+mp3_paths = flv_paths.map do |flv_path|
+  mp3_path = flv_path.sub(/\.flv$/, '.mp3')
 
-  cmd = ["ffmpeg", "-i", flv_path, "-map", "0:1", "-acodec", "copy", m4a_path]
+  cmd = ["ffmpeg", "-i", flv_path, "-b:a", "64k", mp3_path]
   puts "==> #{cmd.join(' ')}"
 
   status = system(*cmd)
   if status
     puts "  * Done!"
-    m4a_path
+    mp3_path
   else
     puts "  * Failed ;("
     nil
@@ -258,17 +258,17 @@ builder = Nokogiri::XML::Builder.new do |xml|
       xml.lastBuildDate Time.now.rfc2822
       xml.language 'ja'
 
-      m4a_paths.reverse.each_with_index do |m4a_path,i|
-        next unless File.exists?(m4a_path)
+      mp3_paths.reverse.each_with_index do |mp3_path,i|
+        next unless File.exists?(mp3_path)
         xml.item {
           xml.title "#{pubdate.strftime("%Y/%m/%d %H:%M")}#{0 < i ? "-#{i+1}" : ""} #{prog.name} - #{prog.personality}"
           xml.description prog.text.gsub(/<.+?>/,'')
-          link = "#{HTTP_BASE}/#{name}/#{File.basename(m4a_path)}"
+          link = "#{HTTP_BASE}/#{name}/#{File.basename(mp3_path)}"
           xml.link link
           xml.guid link
           xml.author prog.personality
           xml.pubDate pubdate.rfc2822
-          xml.enclosure(url: link, length: File.stat(m4a_path).size, type: 'audio/x-m4a')
+          xml.enclosure(url: link, length: File.stat(mp3_path).size, type: 'audio/mpeg')
         }
       end
 
