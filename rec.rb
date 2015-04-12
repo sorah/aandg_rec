@@ -9,9 +9,9 @@ require 'open-uri'
 require 'nokogiri'
 require 'fluent-logger'
 
+@logger = Fluent::Logger::FluentLogger.new("recorder", :host=>'127.0.0.1', :port=>24224)
 def tweet(message)
-  log = Fluent::Logger::FluentLogger.new("twitter", :host=>'localhost', :port=>24224)
-  log.post("aandg", message: message)
+  @logger.post("aandg", message: message)
 end
 
 class Program
