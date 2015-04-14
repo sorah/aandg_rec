@@ -150,6 +150,7 @@ servers.each do |server|
     flv_paths << flv_path
     cmd = [
       'rtmpdump',
+      '--verbose',
       '--live',
       '-o', flv_path,
       '--stop', stop,
