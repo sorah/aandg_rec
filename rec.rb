@@ -144,78 +144,81 @@ servers = FmsList.acquire.available_servers
 try = 0
 stop = MARGIN_BEFORE+seconds+MARGIN_AFTER
 flv_paths = []
-servers.each do |server|
-  2.times do
-    break if stop < 1
-    flv_path = flv_path_base.sub(/\.try\./,".#{try}.")
-    flv_paths << flv_path
-    cmd = [
-      'rtmpdump',
-      '--verbose',
-      '--live',
-      '-o', flv_path,
-      '--stop', stop,
-      '--timeout', TIMEOUT,
-      '--rtmp', server.rtmp,
-      '--app', server.app,
-      '--playpath', server.playpath,
-    ].map(&:to_s)
-    record_start = Time.now
-    puts "==> #{cmd.join(' ')}"
-    tweet "aandg.#{name}.start: #{stop} seconds (try:#{try}, #{pubdate})"
 
-    status = nil
-    out = ""
-    IO.popen([*cmd, err: [:child, :out]], 'r') do |io|
-      th = Thread.new {
-        begin
-          buf = ""
-          until io.eof?
-            str =  io.read(10)
-            buf << str; out << str
-            lines = buf.split(/\r|\n/)
-            if 1 < lines.size
-              buf = lines.pop
-              lines.each do |line|
-                puts line
+2.times do
+  servers.each do |server|
+    3.times do |server_try|
+      break if stop < 1
+      flv_path = flv_path_base.sub(/\.try\./,".#{try}.")
+      flv_paths << flv_path
+      cmd = [
+        'rtmpdump',
+        '--verbose',
+        '--live',
+        '-o', flv_path,
+        '--stop', stop.to_i,
+        '--timeout', TIMEOUT,
+        '--rtmp', server.rtmp,
+        '--app', server.app,
+        '--playpath', server.playpath,
+      ].map(&:to_s)
+      record_start = Time.now
+      puts "==> #{cmd.join(' ')}"
+      tweet "aandg.#{name}.start: #{stop} seconds (try:#{try}, #{pubdate})"
+
+      status = nil
+      out = ""
+      IO.popen([*cmd, err: [:child, :out]], 'r') do |io|
+        th = Thread.new {
+          begin
+            buf = ""
+            until io.eof?
+              str =  io.read(10)
+              buf << str; out << str
+              lines = buf.split(/\r|\n/)
+              if 1 < lines.size
+                buf = lines.pop
+                lines.each do |line|
+                  puts line
+                end
               end
             end
+          rescue Exception => e
+            p e
+            puts e.backtrace
           end
-        rescue Exception => e
-          p e
-          puts e.backtrace
-        end
-      }
+        }
 
-      pid, status = Process.waitpid(io.pid)
+        pid, status = Process.waitpid(io.pid)
 
-      th.kill if th && th.alive?
-    end
-
-    elapsed = Time.now - record_start
-    if status && !status.success?
-      puts "  * May be fail"
-      tweet "aandg.#{name}.fail: #{pubdate.rfc2822}"
-    elsif /^Download may be incomplete/ === out
-      puts "  * Download may be incomplete"
-      tweet "aandg.#{name}.incomplete: #{pubdate.rfc2822}"
-    elsif elapsed < seconds-ALLOW_EARLY_EXIT
-      puts "  * Exited earlier (#{elapsed} seconds elapsed, #{stop} seconds expected)"
-      tweet "aandg.#{name}.early-exit: #{pubdate.rfc2822}; #{elapsed} seconds elapsed / #{stop} seconds expected"
-    else
-      puts "  * Done!"
-      if prog
-        tweet "aandg.#{name}.watched: #{prog.name} (#{pubdate.to_i})"
-      else
-        tweet "aandg.#{name}.watched: #{pubdate.rfc2822}"
+        th.kill if th && th.alive?
       end
 
-      break
-    end
+      elapsed = Time.now - record_start
+      if status && !status.success?
+        puts "  * May be fail"
+        tweet "aandg.#{name}.fail: #{pubdate.rfc2822}"
+      elsif /^Download may be incomplete/ === out
+        puts "  * Download may be incomplete"
+        tweet "aandg.#{name}.incomplete: #{pubdate.rfc2822}"
+      elsif elapsed < seconds-ALLOW_EARLY_EXIT
+        puts "  * Exited earlier (#{elapsed} seconds elapsed, #{stop} seconds expected)"
+        tweet "aandg.#{name}.early-exit: #{pubdate.rfc2822}; #{elapsed} seconds elapsed / #{stop} seconds expected"
+      else
+        puts "  * Done!"
+        if prog
+          tweet "aandg.#{name}.watched: #{prog.name} (#{pubdate.to_i})"
+        else
+          tweet "aandg.#{name}.watched: #{pubdate.rfc2822}"
+        end
 
-    try += 1
-    stop -= elapsed
-  end || break
+        break
+      end
+
+      try += 1
+      stop -= elapsed
+    end || break
+  end
 end
 
 mp3_paths = flv_paths.map do |flv_path|
