@@ -116,6 +116,7 @@ if start
 
   waittime = time - MARGIN_BEFORE
   puts "  * Sleep until #{waittime} "
+  $stdout.flush
   sleep 1 until waittime <= Time.now
 end
 
