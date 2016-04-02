@@ -108,6 +108,9 @@ module Aandg
 
       @days = {}
       tds_by_day.each do |day, tds|
+        prev_hour = nil
+        midnight = false
+
         program_infos = tds.map do |td|
           mail = begin
             mail_link = td.at('.rp a') && td.at('.r-p a')
@@ -131,12 +134,22 @@ module Aandg
             starts_at = nil
           end
 
+          if prev_hour && starts_at && prev_hour > starts_at[0]
+            midnight = true
+          end
+          prev_hour = starts_at[0] if starts_at
+          if midnight
+            program_day = day.succ % 7
+          else
+            program_day = day
+          end
+
           {
-            day: day,
+            day: program_day,
             starts_at: starts_at,
             span: td['rowspan'] ? td['rowspan'].to_i : 1,
-            title: td.at('.title-p') && td.at('.title-p').inner_text.gsub(/\s|　/, ''),
-            personality: td.at('.rp') && td.at('.rp').inner_text.gsub(/\s|　/, ''),
+            title: td.at('.title-p') && td.at('.title-p').inner_text.sub(/^(\s|　)+/, '').sub(/(\s|　)+$/, ''),
+            personality: td.at('.rp') && td.at('.rp').inner_text.sub(/^(\s|　)+/, '').sub(/(\s|　)+$/, ''),
             link: td.at('.title-p a') && td.at('.title-p a')['href'],
             mail: mail,
             banner: td.at('.bnr img') && td.at('.bnr img')['src'],
@@ -147,23 +160,30 @@ module Aandg
           }
         end
 
-        @days[day] = []
-        program_infos.each_with_index do |program_info, i|
-          next if program_info[:etc]
+        program_infos.group_by { |_| _[:day] }.each do |program_day, pis|
+          @days[program_day] ||= []
+          pis.each_with_index do |program_info, i|
+            next if program_info[:etc]
 
-          next_program = program_infos[i.succ]
+            next_program = pis[i.succ] || program_infos.find{ |_| _[:day] == (program_day.succ%7) }
 
-          ends_at = if next_program[:starts_at]
-            next_program[:starts_at]
-          else
-            # Assume 1 row = 30 minute
-            (
-              ((program_info[:starts_at][0] * 60) + program_info[:starts_at][1]) +
-              (program_info[:span] * 30)
-            ).divmod(60)
+            ends_at = if next_program[:starts_at]
+              next_start = next_program[:starts_at].dup
+              if next_start[0] < program_info[:starts_at][0]
+                next_start[0] += 24
+              end
+              next_start
+            else
+              # Assume 1 row = 30 minute
+              (
+                ((program_info[:starts_at][0] * 60) + program_info[:starts_at][1]) +
+                (program_info[:span] * 30)
+              ).divmod(60)
+            end
+
+            @days[program_day] << Program.new(program_info.merge(ends_at: ends_at))
           end
-
-          @days[day] << Program.new(program_info.merge(ends_at: ends_at))
+          @days[program_day].sort_by! { |_| _.starts_at }
         end
       end
     end
