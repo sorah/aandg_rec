@@ -70,7 +70,8 @@ module Aandg
       table = html.at('.timetb-am, .timetb-ag')
 
       # mapping of week of days
-      headings = table.at('thead').search('td, th')[1..-1].map(&:inner_text)
+      headings = table.at('thead').search('td, th').map(&:inner_text)
+      headings.reject!(&:empty?)
       day_map = Hash[headings.map.with_index do |day_ja, i|
         wday = case day_ja.gsub(/\s|　/, '')
         when "月曜日"
