@@ -80,13 +80,24 @@ module Aandg
         end
       end
 
+      program_prefix = work_prefix.program_prefix
+
       puts " * Declearing work"
       work_prefix.declare_work!
+
+      meta_prefix = "#{program_prefix.prefix}#{work_prefix.pubdate_str}.json"
+      begin
+        meta_obj = s3.head_object(bucket: s3_bucket, key: meta_prefix)
+        if meta_obj
+          puts " * WARN: meta json already exists! skipping"
+          return false
+        end
+      rescue Aws::S3::Errors::NoSuchKey
+      end
 
       best_work = work_prefix.best_work
       puts " * best work is #{best_work.prefix.inspect}"
 
-      program_prefix = work_prefix.program_prefix
       puts " * Extracting best mp3 & mp4 to #{program_prefix.prefix.inspect}"
       best_work.extract_works(program_prefix.prefix)
 
