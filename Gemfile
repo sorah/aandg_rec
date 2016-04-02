@@ -5,3 +5,4 @@ source "https://rubygems.org"
 gem 'nokogiri'
 gem 'fluent-logger'
 gem 'aws-sdk'
+gem 'rack'
