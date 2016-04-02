@@ -138,7 +138,7 @@ FileUtils.mkdir_p(target_dir) unless File.exists?(target_dir)
 prog = nil
 Thread.new { # acquire program information after few seconds
   if seconds < 10
-    sleep 5
+    sleep 0
   elsif seconds < 70
     sleep 30
   else
