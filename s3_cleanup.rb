@@ -265,7 +265,15 @@ module Aandg
       end
 
       def target?
-        true#(Time.now - pubdate) > (45 * 60)
+        fnished_work = host_works.select do |work|
+          begin
+            work.meta && true
+          rescue Aws::S3::Errors::NoSuchKey
+            false
+          end
+        end.min_by(&:meta_modified_at)
+
+        (Time.now - finished_work.meta_modified_at) > (60 * 5)
       end
 
       def best_work
@@ -326,6 +334,12 @@ module Aandg
         @meta ||= JSON.parse(
           @s3.get_object(bucket: bucket, key: "#{prefix}meta.json").body.read
         )
+      end
+
+      def meta_modified_at
+        @meta_modified_at ||= @s3.head_object(bucket: bucket, key: "#{prefix}meta.json").last_modified
+      rescue Aws::S3::Errors::NoSuchKey, Aws::S3::Errors::NotFound
+        nil
       end
 
       def error_count
