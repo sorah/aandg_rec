@@ -48,6 +48,22 @@ module Aandg
       def video?
         @video
       end
+
+      def starts_at_sec
+        ((starts_at[0] * 60) + starts_at[1]) * 60
+      end
+
+      def next_occasion_from(time)
+        time_sec = (((time.hour * 60) + time.min) * 60) + time.sec
+
+        if day == time.wday && time_sec <= starts_at_sec
+          Time.new(time.year,time.month,time.day,starts_at[0],starts_at[1],0)
+        else
+          remaining_days = day <= time.wday ?  ((7 - time.wday) + day) : (day - time.wday)
+          wdayadj = (time + ( remaining_days * 86400 ))
+          Time.new(wdayadj.year,wdayadj.month,wdayadj.day,starts_at[0],starts_at[1],0)
+        end
+      end
     end
 
     def self.streaming
@@ -63,6 +79,30 @@ module Aandg
     end
 
     attr_reader :days
+
+    def take(n, starting: Time.now)
+      starting_sec = (((starting.hour * 60) + starting.min) * 60) + starting.sec
+      result = []
+
+      time = starting
+      wday = time.wday
+      until result.size >= n
+        programs = days[wday] or raise "no programs for wday #{wday}"
+        if result.empty?
+          programs = programs.reject do |prog|
+            prog.starts_at_sec < starting_sec
+          end
+        end
+
+        programs.each do |prog|
+          time = prog.next_occasion_from(time)
+          result << [time, prog]
+          break if result.size >= n
+        end
+        wday = wday.succ % 7
+      end
+      result
+    end
 
     private
 
