@@ -37,6 +37,10 @@ module Aandg
         ((ends_at[0] * 60) + ends_at[1]) - ((starts_at[0] * 60) + starts_at[1])
       end
 
+      def duration_sec
+        duration * 60
+      end
+
       def repeat?
         @repeat
       end
@@ -63,6 +67,10 @@ module Aandg
           wdayadj = (time + ( remaining_days * 86400 ))
           Time.new(wdayadj.year,wdayadj.month,wdayadj.day,starts_at[0],starts_at[1],0)
         end
+      end
+
+      def inspect
+        "#<#{self.class.name}: #{title.inspect} / day #{day}, #{starts_at.map { |_| _.to_s.rjust(2,?0) }.join(?:)}-#{ends_at.map { |_| _.to_s.rjust(2,?0) }.join(?:)} (#{duration}m)>"
       end
     end
 
