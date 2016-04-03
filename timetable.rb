@@ -71,7 +71,6 @@ module Aandg
 
       # mapping of week of days
       headings = table.at('thead').search('td, th').map(&:inner_text)
-      headings.reject!(&:empty?)
       day_map = Hash[headings.map.with_index do |day_ja, i|
         wday = case day_ja.gsub(/\s|　/, '')
         when "月曜日"
@@ -88,17 +87,52 @@ module Aandg
           6
         when "日曜日"
           0
+        when ""
+          -1
         else
           raise ParseError, "Unknown heading at #{i}: #{day_ja.inspect}"
         end
         [i, wday]
       end]
 
-      tds_by_day = {}
       rows = table.at('tbody').search('> tr').map { |tr| tr.search('td') }
-      rows.each do |tr|
+      rows_count = rows.map(&:size).max
+      # fill nil for unexist cell, where previous <td> is continuing due to rowspan>1
+      rowspan_state = {}
+      padded_rows = rows.map do |row|
+        expected_col_count = rowspan_state.size + row.size
+        padded_row = []
+
+        rowp = 0
+        while padded_row.size < expected_col_count
+          if rowspan_state[padded_row.size]
+            padded_row << nil
+          else
+            rowspan = (row[rowp]['rowspan'] || 1).to_i
+            if rowspan > 1
+              rowspan_state[padded_row.size] = rowspan
+            end
+
+            padded_row << row[rowp]
+            rowp += 1
+          end
+        end
+
+        rowspan_state.each_key do |colnum|
+          rowspan_state[colnum] -= 1
+          rowspan_state.delete(colnum) if rowspan_state[colnum] < 1
+        end
+
+        padded_row
+      end
+
+
+      tds_by_day = {}
+      padded_rows.each do |tr|
         tr.each_with_index do |td, i|
+          next unless td
           day = day_map[i]
+          next if day < 0
           raise ParseError, "Unknown day #{i}: #{td.inspect}" unless day
 
           tds_by_day[day] ||= []
