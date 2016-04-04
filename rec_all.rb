@@ -8,6 +8,7 @@ require 'pathname'
 require 'thread'
 require 'sigdump/setup'
 require 'sleepy_penguin'
+require 'logger'
 
 
 module Aandg
@@ -15,22 +16,29 @@ module Aandg
     def initialize(config)
       @shutdown = nil
       @log_dir = Pathname.new(ENV['AGQR_LOG_DIR'] || config['log'] || './log').tap(&:mkpath)
+      @logger = new_logger('scheduler')
+    end
+
+    attr_reader :logger
+
+    def new_logger(progname)
+      Logger.new($stdout).tap { |_| _.progname = progname }
     end
 
     def start
       raise 'already ran' unless @shutdown.nil?
       @shutdown = false
 
-      @cleanup_invoker = CleanupInvoker.new(log_dir: @log_dir)
+      @cleanup_invoker = CleanupInvoker.new(log_dir: @log_dir, logger: new_logger('cleanup_invoker'))
       @cleanup_invoker.start
       @cleanup_invoker.request!
 
-      @timetable_updater = TimetableUpdater.new.tap do |tt|
+      @timetable_updater = TimetableUpdater.new(logger: new_logger('timetable_updater')).tap do |tt|
         tt.on_update(&method(:on_timetable_update))
         tt.start
       end
 
-      @recorder_invoker = RecorderInvoker.new(log_dir: @log_dir).tap do |rec|
+      @recorder_invoker = RecorderInvoker.new(log_dir: @log_dir, logger: new_logger('recorder_invoker')).tap do |rec|
         rec.on_start(&method(:on_record_start))
         rec.on_complete(&method(:on_record_complete))
         rec.start
@@ -48,11 +56,11 @@ module Aandg
       Thread.start { term_event.value; terminate }
       Thread.start {
         hup_event.value
-        puts "[restart] SIGHUP"
+        logger.info "[restart] SIGHUP"
         begin
           stop!
           pid = spawn(__FILE__, *ARGV)
-          puts "[restart] spawned #{pid}"
+          logger.info "[restart] spawned #{pid}"
           wait_down
         rescue Exception => e
           p e
@@ -116,7 +124,7 @@ module Aandg
     def shutdown!(immediately = false)
       return if @shutdown.nil?
       return if @shutdown
-      puts "[scheduler] requesting shutdown#{immediately ? ' (immediately)' : nil}"
+      logger.info "requesting shutdown#{immediately ? ' (immediately)' : nil}"
       @shutdown = true
       @timetable_updater.shutdown(immediately)
       @cleanup_invoker.shutdown(immediately)
@@ -125,7 +133,7 @@ module Aandg
 
     def wait_down
       return if @shutdown.nil?
-      puts "[scheduler] waiting shutdown..."
+      logger.info "waiting shutdown..."
       while @timetable_updater.running? || @cleanup_invoker.running? || @recorder_invoker.running?
         # puts "[scheduler] timetable_updater:#{@timetable_updater.running?}" \
         #      " cleanup_invoker:#{@cleanup_invoker.running?}" \
@@ -200,7 +208,7 @@ module Aandg
     end
 
     class RecorderInvoker < Worker
-      def initialize(log_dir: nil)
+      def initialize(log_dir: nil, logger: Logger.new($stdout))
         @on_start = proc { |prog|  }
         @on_complete = proc { |prog|  }
         @timerfds = {}
@@ -208,8 +216,11 @@ module Aandg
         @pids = {}
         @timetable = nil
         @log_dir = log_dir
+        @logger = logger
         @shutdown = nil
       end
+
+      attr_reader :logger
 
       def pids
         @pids_lock.synchronize do
@@ -241,11 +252,11 @@ module Aandg
       end
 
       def teardown
-        puts "[recorder_invoker] teardown..."
+        logger.info "teardown..."
         @pids_lock.synchronize do
-          puts "[recorder_invoker] #{@pids.size} recorders are running:"
+          logger.info "#{@pids.size} recorders are running:"
           @pids.each do |pid, prog|
-            puts "[recorder_invoker]   * #{pid}: #{prog.inspect}"
+            logger.info "  * #{pid}: #{prog.inspect}"
           end
         end
         @shutdown = true
@@ -254,11 +265,11 @@ module Aandg
 
       def terminate
         teardown
-        puts "[recorder_invoker] terminating"
+        logger.info "terminating"
         @pids_lock.synchronize do
           @pids.each do |pid, prog|
             begin
-              puts "[recorder_invoker] SIGTERM => #{pid} (#{prog.inspect})"
+              logger.info "SIGTERM => #{pid} (#{prog.inspect})"
               Process.kill(:TERM, pid)
             rescue Errno::ESRCH, Errno::ECHILD
             end
@@ -291,25 +302,25 @@ module Aandg
       def waiter_thread
         while th = @waiter_queue.pop
           th.join
-          puts "[recorder_invoker/waiter_thread] remaining #{@waiter_queue.size-1} threads" if @shutdown
+          logger.info "[waiter_thread] remaining #{@waiter_queue.size-1} threads" if @shutdown
         end
       end
 
       def update_timers!
         return unless @timetable
-        puts "[recorder_invoker] Updating timers..."
+        logger.info "Updating timers..."
         @timerfds = {}
         programs = @timetable.take(20)
         programs.each do |start, prog|
           timer = SleepyPenguin::TimerFD.new(:REALTIME)
           timer.settime(:ABSTIME, 0, start.to_i - 60)
           @timerfds[timer.fileno] = [timer, start, prog]
-          puts "[recorder_invoker] fd=#{timer.fileno} starts #{start.inspect}: #{prog.inspect}"
+          logger.info "fd=#{timer.fileno} starts #{start.inspect}: #{prog.inspect}"
         end
       end
 
       def main_loop
-        puts "[recorder_invoker] helo"
+        logger.info "helo"
         catch(:stop) do
           loop do
             catch(:reload) do
@@ -317,18 +328,18 @@ module Aandg
                 wait_poll
               end
             end
-            puts "[recorder_invoker] reload"
+            logger.info "reload"
             update_timers!
             setup_poll
           end
         end
-        puts "[recorder_invoker] exiting"
+        logger.info "exiting"
       rescue Exception => e
-        $stderr.puts "[recorder_invoker] !!! encountered error: #{$!.inspect}"
-        $!.backtrace.each {|bt| $stderr.puts "[recorder_invoker]   #{bt}" }
+        logger.error "!!! encountered error: #{$!.inspect}"
+        $!.backtrace.each {|bt| logger.error "  #{bt}" }
         raise
       ensure
-        puts "[recorder_invoker] bye"
+        logger.info "bye"
         @poll.close
       end
 
@@ -349,9 +360,9 @@ module Aandg
               timer, start, prog = job
               invoke_recorder(start, prog)
             else
-              $stderr.puts "[recorder_invoker] unknown timer: #{io.fileno}"
+              logger.warn "unknown timer: #{io.fileno}"
             end
-            puts "[recorder_invoker] remaining timers: #{@timerfds.size}"
+            logger.info "remaining timers: #{@timerfds.size}"
             if @timerfds.size < 2
               throw :reload
             end
@@ -360,7 +371,7 @@ module Aandg
       end
 
       def invoke_recorder(start, prog)
-        puts "[recorder_invoker] spawning rec2.rb for #{prog.inspect}"
+        logger.info "spawning rec2.rb for #{prog.inspect}"
         if @log_dir
           log_io = open(@log_dir.join("recorder.#{start.to_i}.log"), 'w')
           log_io.puts "=> #{start.inspect} #{prog.inspect}"
@@ -372,7 +383,7 @@ module Aandg
         title = prog.repeat? ? "#{prog.title}-repeat" : prog.title
         pid = spawn("#{__dir__}/rec2.rb", title, prog.duration_sec.to_s, start.to_i.to_s, opts)
         log_io.close if log_io
-        puts "[recorder_invoker] spawned pid=#{pid} for #{prog.inspect} (#{start.to_i})"
+        logger.info "spawned pid=#{pid} for #{prog.inspect} (#{start.to_i})"
         @pids_lock.synchronize do
           @pids[pid] = prog
         end
@@ -384,22 +395,24 @@ module Aandg
         begin
           @on_start.call(prog) if @on_start
         rescue Exception => e
-          $stderr.puts "[recorder_invoker/watchdog(#{pid})/on_start] !!! encountered error: #{$!.inspect}"
-          $!.backtrace.each {|bt| $stderr.puts "[recorder_invoker/watchdog(#{pid})/on_start]   #{bt}" }
+          logger.error "[watchdog(#{pid})/on_start] !!! encountered error: #{$!.inspect}"
+          $!.backtrace.each {|bt| logger.error "[watchdog(#{pid})/on_start]   #{bt}" }
         end
 
-        puts "[recorder_invoker/watchdog(#{pid})] grrrr..."
+        logger.info "[watchdog(#{pid})] grrrr..."
         _, status = Process.waitpid2(pid)
-        io = status.success? ? $stdout : $stderr
-        io.puts "[recorder_invoker/watchdog(#{pid})] #{prog.inspect} finished: #{status.inspect}"
+        logger.log(
+          status.success? ? Logger::INFO : Logger::ERROR,
+          "[watchdog(#{pid})] #{prog.inspect} finished: #{status.inspect}"
+        )
         @pids_lock.synchronize do
           @pids.delete pid
         end
         @on_complete.call(prog) if @on_complete
       rescue Errno::ESRCH, Errno::ECHILD => e
-        $stderr.puts "[recorder_invoker/watchdog(#{pid})] abort #{e.inspect}"
+        logger.error "[watchdog(#{pid})] abort #{e.inspect}"
       rescue Errno::EINTR
-        $stderr.puts "[recorder_invoker/watchdog(#{pid})] EINT"
+        logger.error "[watchdog(#{pid})] EINT"
         sleep 1
         retry
       end
@@ -408,11 +421,14 @@ module Aandg
     class CleanupInvoker < Worker
       MARGIN = ENV['AGQR_DEBUG'] == '1' ? 5 : 530
 
-      def initialize(log_dir: nil)
+      def initialize(log_dir: nil, logger: Logger.new($stdout))
         @lock = Mutex.new
         @log_dir = log_dir
+        @logger = logger
         @pid = nil
       end
+
+      attr_reader :logger
 
       def running?
         super && watchdog_running?
@@ -433,11 +449,11 @@ module Aandg
       def request!
         remain = @timer.gettime.last
         if remain > 0
-          puts "[cleanup_invoker] Already requested, it'll run after #{remain} seconds"
+          logger.info "Already requested, it'll run after #{remain} seconds"
           nil
         else
           val = ENV['AGQR_DEBUG'] == '1' ? MARGIN : MARGIN + rand(60)
-          puts "[cleanup_invoker] Requesting with interval of #{val} seconds"
+          logger.info "Requesting with interval of #{val} seconds"
           @timer.settime(0, val, val)
           val
         end
@@ -445,10 +461,10 @@ module Aandg
 
       def perform!
         if @pid
-          $stderr.puts "[cleanup_invoker] previous one is still running! (pid=#{@pid})"
+          logger.warn "previous one is still running! (pid=#{@pid})"
           return
         end
-        puts "[cleanup_invoker] performing clean..."
+        logger.info "performing clean..."
 
         if @log_dir
           log_io = open(@log_dir.join("cleaner.log"), 'a')
@@ -460,7 +476,7 @@ module Aandg
         end
         pid = spawn("#{__dir__}/s3_cleanup.rb", opts)
         log_io.close if log_io
-        puts "[cleanup_invoker] spawned pid=#{pid}"
+        logger.info "spawned pid=#{pid}"
         @lock.synchronize do
           @pid = pid
           @watchdog = start_watchdog(pid)
@@ -469,8 +485,10 @@ module Aandg
       end
 
       def finalize_previous_run!
-        io = @exitstatus.success? ? $stdout : $stderr
-        io.puts "[cleanup_invoker] #{@pid} exited: #{@exitstatus.inspect}"
+        logger.log(
+          @exitstatus.success? ? Logger::INFO : Logger::ERROR,
+          "#{@pid} exited: #{@exitstatus.inspect}"
+        )
 
         @lock.synchronize do
           @exitstatus = nil
@@ -495,9 +513,9 @@ module Aandg
 
       def terminate
         teardown
-        puts "[cleanup_invoker] terminating"
+        logger.info "terminating"
         pid = @lock.synchronize { @pid }
-        puts "[cleanup_invoker] SIGTERM => #{pid}"
+        logger.info "SIGTERM => #{pid}"
         begin
           Process.kill(:TERM, pid)
         rescue Errno::ESRCH, Errno::ECHILD
@@ -505,7 +523,7 @@ module Aandg
       end
 
       def main_loop
-        puts "[cleanup_invoker] helo"
+        logger.info "helo"
         catch(:stop) do
           loop do
             @poll.wait do |events, io|
@@ -524,21 +542,21 @@ module Aandg
             end
           end
         end
-        puts "[cleanup_invoker] exiting"
+        logger.info "exiting"
       rescue Exception => e
-        $stderr.puts "[cleanup_invoker] !!! encountered error: #{$!.inspect}"
-        $!.backtrace.each {|bt| $stderr.puts "[cleanup_invoker]   #{bt}" }
+        logger.error "!!! encountered error: #{$!.inspect}"
+        $!.backtrace.each {|bt| logger.error "  #{bt}" }
       ensure
-        puts "[cleanup_invoker] bye"
+        logger.info "bye"
         @poll.close
       end
 
       def start_watchdog(pid)
         @watchdog = Thread.new do
           begin
-            puts "[cleanup_invoker/watchdog(#{pid})] grrr..."
+            logger.debug "[watchdog(#{pid})] grrr..."
             _, status = Process.waitpid2(pid)
-            puts "[cleanup_invoker/watchdog(#{pid})] exit #{status.inspect}"
+            logger.debug "[watchdog(#{pid})] exit #{status.inspect}"
             @exitstatus = status
             @complete_event.incr(1)
           rescue Exception => e
@@ -551,10 +569,13 @@ module Aandg
     class TimetableUpdater < Worker
       INTERVAL = ENV['AGQR_DEBUG'] == '1' ? 300 : 1800
 
-      def initialize
+      def initialize(logger: Logger.new($stdout))
+        @logger = logger
         @on_update = proc {}
         @timetable = nil
       end
+
+      attr_reader :logger
 
       def on_update(&block)
         @on_update = block
@@ -573,21 +594,21 @@ module Aandg
       end
 
       def update!
-        puts "[timetable_updater] updating..."
+        logger.info "updating..."
         previous_timetable = @timetable
         @timetable = Timetable.streaming
-        puts "[timetable_updater] #{@timetable.days.values.flatten.size} programs loaded."
+        logger.info "#{@timetable.days.values.flatten.size} programs loaded."
         unless previous_timetable == @timetable
-          puts "[timetable_updater] Detect a difference, calling hook"
+          logger.info "Detect a difference, calling hook"
           @on_update.call @timetable
         end
       rescue Exception => e
-        $stderr.puts "[timetable_updater] !!! encountered error: #{$!.inspect}"
-        $!.backtrace.each {|bt| $stderr.puts "[timetable_updater]   #{bt}" }
+        logger.error "!!! encountered error: #{$!.inspect}"
+        $!.backtrace.each {|bt| logger.error "  #{bt}" }
       end
 
       def main_loop
-        puts "[timetable_updater] helo"
+        logger.info "helo"
         catch(:stop) do
           loop do
             @poll.wait do |events, io|
@@ -597,7 +618,7 @@ module Aandg
                 update!
                 val = INTERVAL + rand(120)
                 @timer.settime(0, val, val)
-                puts "[timetable_updater] next run will after #{val} seconds (#{@timer.gettime.inspect})"
+                logger.info "next run will after #{val} seconds (#{@timer.gettime.inspect})"
               when @stop_event
                 io.value
                 throw :stop
@@ -605,9 +626,9 @@ module Aandg
             end
           end
         end
-        puts "[timetable_updater] exiting"
+        logger.info "exiting"
       ensure
-        puts "[timetable_updater] bye"
+        logger.info "bye"
         @poll.close
       end
     end
