@@ -143,8 +143,7 @@ safe_name = name.
   gsub("　", " ").
   gsub(" ", "_")
 
-
-target_dir = File.join(RECORD_DIR, safe_name, pubdate_str)
+target_dir = File.join(RECORD_DIR, "#{pubdate_str}.#{$$}")
 FileUtils.mkdir_p(target_dir) unless File.exists?(target_dir)
 
 prog = nil
