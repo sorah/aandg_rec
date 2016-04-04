@@ -265,7 +265,7 @@ module Aandg
       end
 
       def target?
-        fnished_work = host_works.select do |work|
+        finished_work = host_works.select do |work|
           begin
             work.meta && true
           rescue Aws::S3::Errors::NoSuchKey
