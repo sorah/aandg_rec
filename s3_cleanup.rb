@@ -265,6 +265,7 @@ module Aandg
       end
 
       def target?
+        return true if ENV['AGQR_DEBUG'] == '1'
         finished_work = host_works.select do |work|
           begin
             work.meta && true
