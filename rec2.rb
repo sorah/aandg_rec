@@ -411,6 +411,8 @@ else
   puts "  * Skipping"
 end
 
+FileUtils.remove_entry_secure(target_dir)
+
 if prog
   tweet "agqr.#{name}.done: #{prog.name} (#{pubdate.to_i})"
 else
