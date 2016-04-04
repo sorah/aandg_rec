@@ -18,6 +18,8 @@ GEM
     nokogiri (1.6.1)
       mini_portile (~> 0.5.0)
     rack (1.6.4)
+    sigdump (0.2.4)
+    sleepy_penguin (3.4.1)
     yajl-ruby (1.2.0)
 
 PLATFORMS
@@ -28,6 +30,8 @@ DEPENDENCIES
   fluent-logger
   nokogiri
   rack
+  sigdump
+  sleepy_penguin
 
 BUNDLED WITH
    1.11.2
