@@ -117,10 +117,14 @@ HOSTNAME = (ENV['AGQR_HOSTNAME'] || Socket.gethostname)
 TIMEOUT = (ENV['AGQR_TIMEOUT'] || config['timeout'] || 10).to_i
 
 if start
-  h,m = start[0,2].to_i, start[2,2].to_i if start
-  now = Time.now
-  time = Time.new(now.year, now.month, now.day, h, m, 0)
-  time += 86400 if time < now
+  if start.size == 4
+    h,m = start[0,2].to_i, start[2,2].to_i
+    now = Time.now
+    time = Time.new(now.year, now.month, now.day, h, m, 0)
+    time += 86400 if time < now
+  else
+    time = Time.at(start.to_i)
+  end
 
   waittime = time - MARGIN_BEFORE
   puts "  * Sleep until #{waittime} "
