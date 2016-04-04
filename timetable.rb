@@ -296,4 +296,15 @@ module Aandg
       end
     end
   end
+
+  class DummyTimetable < Timetable
+    def initialize
+      @days = {}
+      0.upto(6) do |day|
+        @days[day] = 0.step((60*24)-2,2).map do |start|
+          Program.new(day: day, starts_at: start.divmod(60), ends_at: (start+2).divmod(60), title: "dummy-#{start}")
+        end
+      end
+    end
+  end
 end
