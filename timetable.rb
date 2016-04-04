@@ -33,6 +33,22 @@ module Aandg
 
       attr_reader :day, :starts_at, :ends_at, :title, :personality, :link, :banner
 
+      def to_h
+        {
+          day: @day,
+          starts_at: @starts_at,
+          ends_at: @ends_at,
+          title: @title,
+          personality: @personality,
+          link: @link,
+          mail: @mail,
+          banner: @banner,
+          video: @video,
+          repeat: @repeat,
+          live: @live,
+        }
+      end
+
       def duration
         ((ends_at[0] * 60) + ends_at[1]) - ((starts_at[0] * 60) + starts_at[1])
       end
@@ -87,6 +103,16 @@ module Aandg
     end
 
     attr_reader :days
+
+    def ==(o)
+      self.class == o.class && self.for_compare == o.for_compare
+    end
+
+    def for_compare
+      @days.map do |day, progs|
+        [day, progs.map(&:to_h)]
+      end
+    end
 
     def take(n, starting: Time.now)
       starting_sec = (((starting.hour * 60) + starting.min) * 60) + starting.sec
