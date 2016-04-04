@@ -135,7 +135,14 @@ end
 pubdate = time || Time.now
 pubdate_str = pubdate.strftime('%Y-%m-%d_%H%M%S')
 
-safe_name = name.gsub("/", "／").gsub('"','').gsub("'", '').gsub(" ", "_")
+safe_name = name.
+  gsub("/", "／").
+  tr("[](){}", "［］（）｛｝").
+  gsub('"','').
+  gsub("'", '').
+  gsub("　", " ").
+  gsub(" ", "_")
+
 
 target_dir = File.join(RECORD_DIR, safe_name, pubdate_str)
 FileUtils.mkdir_p(target_dir) unless File.exists?(target_dir)
