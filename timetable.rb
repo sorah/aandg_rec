@@ -86,7 +86,8 @@ module Aandg
       end
 
       def inspect
-        "#<#{self.class.name}: #{title.inspect} / day #{day}, #{starts_at.map { |_| _.to_s.rjust(2,?0) }.join(?:)}-#{ends_at.map { |_| _.to_s.rjust(2,?0) }.join(?:)} (#{duration}m)>"
+        flags = [repeat? ? 'repeat' : nil, live? ? 'live' : nil, video? ? 'video' : nil].compact.join(?,)
+        "#<#{self.class.name}: #{title.inspect} #{flags} / day #{day}, #{starts_at.map { |_| _.to_s.rjust(2,?0) }.join(?:)}-#{ends_at.map { |_| _.to_s.rjust(2,?0) }.join(?:)} (#{duration}m)>"
       end
     end
 
