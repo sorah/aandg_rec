@@ -13,6 +13,7 @@ require 'aws-sdk'
 require 'json'
 require 'fileutils'
 require 'socket'
+require 'tempfile'
 
 @logger = Fluent::Logger::FluentLogger.new("recorder", :host=>'127.0.0.1', :port=>24224)
 def tweet(message)
@@ -256,7 +257,7 @@ end.compact
 
 puts "==> Concatenating MP3"
 single_mp3_path = File.join(target_dir, 'all.mp3')
-playlist = Tempfile.new
+playlist = Tempfile.new("agqr-#{pubdate_str}-#{$$}-mp3.txt")
 playlist.puts mp3_paths.map { |_| "file '#{_}'" }.join("\n")
 playlist.flush
 cmd = ["ffmpeg", "-f", "concat", "-i", playlist.path, "-c", "copy", single_mp3_path]
@@ -270,7 +271,7 @@ end
 
 puts "==> Concatenating FLV"
 single_mp4_path = File.join(target_dir, 'all.mp4')
-playlist = Tempfile.new
+playlist = Tempfile.new("agqr-#{pubdate_str}-#{$$}-mp4.txt")
 playlist.puts flv_paths.map { |_| "file '#{_}'" }.join("\n")
 playlist.flush
 cmd = ["ffmpeg", "-f", "concat", "-i", playlist.path, "-vcodec", "libx264", "-acodec", "libfaac", "-b:a", "64k", single_mp4_path]
