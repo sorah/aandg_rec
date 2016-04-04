@@ -42,9 +42,22 @@ module Aandg
 
       stop_event = SleepyPenguin::EventFD.new(0, :SEMAPHORE)
       term_event = SleepyPenguin::EventFD.new(0, :SEMAPHORE)
+      hup_event = SleepyPenguin::EventFD.new(0, :SEMAPHORE)
 
       Thread.start { stop_event.value; stop }
       Thread.start { term_event.value; terminate }
+      Thread.start {
+        hup_event.value
+        puts "[restart] SIGHUP"
+        begin
+          stop!
+          pid = spawn(__FILE__, *ARGV)
+          puts "[restart] spawned #{pid}"
+          wait_down
+        rescue Exception => e
+          p e
+        end
+      }
 
       int_received = 0
       handler = proc do
@@ -60,6 +73,7 @@ module Aandg
       end
       trap(:INT, handler)
       trap(:TERM, handler)
+      trap(:HUP) { hup_event.incr(1) }
 
       @timetable_updater.join
       @cleanup_invoker.join
@@ -74,7 +88,7 @@ module Aandg
     end
 
     def on_record_start(program)
-      $0 = "agqr-rec-all: (#{Time.now.to_i}) #{program.title.inspect}"
+      update_pidname
     end
 
     def on_record_complete(program)
@@ -118,6 +132,22 @@ module Aandg
         #      " recorder_invoker:#{@recorder_invoker.running?}"
         sleep 1
       end
+    end
+
+    def update_pidname
+      str = "agqr-rec-all:"
+      if @shutdown
+        str << " shutting down;"
+      end
+
+      pid, program = @recorder_invoker.pids.to_a.last
+      if pid
+        str << " (#{Time.now.to_i}) #{program.title.inspect}"
+      else
+        str << " idle"
+      end
+
+      $0 = str
     end
 
     class Worker
@@ -179,6 +209,12 @@ module Aandg
         @timetable = nil
         @log_dir = log_dir
         @shutdown = nil
+      end
+
+      def pids
+        @pids_lock.synchronize do
+          @pids.dup
+        end
       end
 
       def on_start(&block)
