@@ -165,7 +165,7 @@ module Aandg
         work_prefix.host_works.each do |x|
           if x == best_work
             new_prefix = "#{rec_prefix}#{x.host}/"
-            x.move_to!(new_prefix)
+            x.move_to!(new_prefix, skip_single: true)
           else
             x.destroy!
           end
@@ -358,10 +358,24 @@ module Aandg
         @vote
       end
 
-      def move_to!(new_prefix)
+      def move_to!(new_prefix, skip_single: false, mp3_storage_class: 'REDUCED_REDUNDANCY', storage_class: 'STANDARD')
         keys = @contents.map(&:key)
         keys.each do |key|
+          if skip_single
+            basename = key.split(?/).last
+            next if basename == meta['single_mp3_path']
+            next if basename == meta['single_mp4_path']
+          end
+
+          sclass = case
+                   when key.end_with?('.mp3')
+                     mp3_storage_class
+                   else
+                     storage_class
+                   end
+
           @s3.copy_object(
+            storage_class: sclass,
             copy_source: "/#{bucket}/#{URI.encode_www_form_component(key)}",
             bucket: bucket,
             key: "#{new_prefix}#{key[prefix.size..-1]}",
