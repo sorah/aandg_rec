@@ -19,7 +19,7 @@ $stdout.sync = true
 
 module Aandg
   class S3Cleaner
-    def initialize(config, hostname = nil)
+    def initialize(config, hostname = nil, logger: Logger.new($stdout))
       @hostname = (hostname || ENV['AGQR_HOSTNAME'] || Socket.gethostname)
       @s3_region = ENV['AGQR_S3_REGION'] || config['s3_region']
       @s3_bucket = ENV['AGQR_S3_BUCKET'] || config['s3_bucket']
@@ -27,7 +27,7 @@ module Aandg
       @s3_access_key_id = config['aws_access_key_id']
       @s3_secret_access_key =  config['aws_secret_access_key']
       @url_base = ENV['AGQR_URL_BASE'] || config['http_base'] || "http://localhost"
-      @logger = Logger.new($stdout)
+      @logger = logger
       @logger.progname = 's3_cleaner'
 
       raise ArgumentError unless @s3_region && @s3_bucket
@@ -444,11 +444,13 @@ module Aandg
   end
 end
 
-config_path = "#{__dir__}/config.yml"
-if File.exists?(config_path)
-  config = YAML.load_file(config_path)
-else
-  config = {}
-end
+if $0 == __FILE__
+  config_path = "#{__dir__}/config.yml"
+  if File.exists?(config_path)
+    config = YAML.load_file(config_path)
+  else
+    config = {}
+  end
 
-Aandg::S3Cleaner.new(config).run!
+  Aandg::S3Cleaner.new(config).run!
+end
