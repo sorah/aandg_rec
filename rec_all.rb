@@ -32,7 +32,6 @@ module Aandg
 
       @cleanup_invoker = CleanupInvoker.new(log_dir: @log_dir, logger: new_logger('cleanup_invoker'))
       @cleanup_invoker.start
-      @cleanup_invoker.request!
 
       @timetable_updater = TimetableUpdater.new(logger: new_logger('timetable_updater')).tap do |tt|
         tt.on_update(&method(:on_timetable_update))
