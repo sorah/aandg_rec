@@ -14,10 +14,12 @@ require 'json'
 require 'fileutils'
 require 'socket'
 require 'tempfile'
+require 'logger'
 
-@logger = Fluent::Logger::FluentLogger.new("recorder", :host=>'127.0.0.1', :port=>24224)
+$stdout.sync = true
+@logger = Logger.new($stdout)
+@logger.progname = 'rec'
 def tweet(message)
-  @logger.post("aandg", message: message)
 end
 
 class Program
@@ -104,6 +106,7 @@ else
 end
 
 RECORD_DIR = ENV['AGQR_RECORD_DIR'] || config['record_dir'] || "#{__dir__}/recorded"
+LOG_DIR = Pathname.new(ENV['AGQR_LOG_DIR'] || config['log'] || './log').tap(&:mkpath)
 S3_REGION = ENV['AGQR_S3_REGION'] || config['s3_region']
 S3_BUCKET = ENV['AGQR_S3_BUCKET'] || config['s3_bucket']
 S3_PREFIX = (ENV['AGQR_S3_PREFIX'] || config['s3_prefix'] || '').sub(/\/\z/,'')
@@ -129,8 +132,7 @@ if start
   end
 
   waittime = time - MARGIN_BEFORE
-  puts "  * Sleep until #{waittime} "
-  $stdout.flush
+  @logger.info "Sleep until #{waittime} "
   sleep 1 until waittime <= Time.now
 end
 
@@ -159,8 +161,8 @@ Thread.new { # acquire program information after few seconds
   end
 
   prog = Program.acquire
-  puts "  * #{prog.name}"
-  puts "  * #{prog.text.inspect}"
+  @logger.info "=> program: #{prog.name}"
+  @logger.info "   #{prog.text.inspect}"
   tweet "agqr.#{name}.watching: #{prog.name} (#{pubdate})"
 }
 
@@ -192,49 +194,31 @@ flv_paths = []
         '--playpath', server.playpath,
       ].map(&:to_s)
       record_start = Time.now
-      puts "==> #{cmd.join(' ')}"
+      @logger.info "==> #{cmd.join(' ')}"
       tweet "agqr.#{name}.start: #{stop} seconds (try:#{try}, #{pubdate})"
 
       status = nil
-      out = ""
-      IO.popen([*cmd, err: [:child, :out]], 'r') do |io|
-        th = Thread.new {
-          begin
-            buf = ""
-            until io.eof?
-              str =  io.read(10)
-              buf << str; out << str
-              lines = buf.split(/\r|\n/)
-              if 1 < lines.size
-                buf = lines.pop
-                lines.each do |line|
-                  puts line
-                end
-              end
-            end
-          rescue Exception => e
-            p e
-            puts e.backtrace
-          end
-        }
-
-        pid, status = Process.waitpid(io.pid)
-
-        th.kill if th && th.alive?
+      
+      log_path = LOG_DIR.join("rtmpdump.#{$$}.#{try}.log")
+      open(log_path, 'w') do  |log_io|
+        log_io.puts "=> #{safe_name}: #{cmd.inspect}"
+        log_io.flush
+        pid = spawn(*cmd, out: log_io, err: log_io)
+        pid, status = Process.waitpid(pid)
       end
 
       elapsed = (Time.now - record_start).to_i
       if status && !status.success?
-        puts "  * May be failed"
+        @logger.warn "May be failed"
         tweet "agqr.#{name}.fail: #{pubdate.rfc2822}"
-      elsif /^Download may be incomplete/ === out
-        puts "  * Download may be incomplete"
+      elsif /^Download may be incomplete/ === File.read(log_path)
+        @logger.warn "Download may be incomplete"
         tweet "agqr.#{name}.incomplete: #{pubdate.rfc2822}"
       elsif elapsed < (seconds-ALLOW_EARLY_EXIT)
-        puts "  * Exited earlier (#{elapsed} seconds elapsed, #{stop} seconds expected)"
+        @logger.warn "Exited earlier (#{elapsed} seconds elapsed, #{stop} seconds expected)"
         tweet "agqr.#{name}.early-exit: #{pubdate.rfc2822}; #{elapsed}s elapsed, #{stop}s expected"
       else
-        puts "  * Done!"
+        @logger.info "ok"
         if prog
           tweet "agqr.#{name}.watched: #{prog.name} (#{pubdate.to_i})"
         else
@@ -251,51 +235,66 @@ flv_paths = []
   end || break
 end
 
-mp3_paths = flv_paths.map do |flv_path|
-  mp3_path = flv_path.sub(/\.flv$/, '.mp3')
+mp3_paths = nil
+single_mp3_path =nil
+single_mp4_path = nil
+open(LOG_DIR.join("ffmpeg.#{$$}.log"), 'w') do  |log_io|
+  mp3_paths = flv_paths.map do |flv_path|
+    mp3_path = flv_path.sub(/\.flv$/, '.mp3')
 
-  cmd = ["ffmpeg", "-i", flv_path, "-b:a", "64k", mp3_path]
-  puts "==> #{cmd.join(' ')}"
+    cmd = ["ffmpeg", "-i", flv_path, "-b:a", "64k", mp3_path]
+    @logger.info "==> #{cmd.join(' ')}"
+    log_io.puts "=> #{safe_name}: #{cmd.inspect}"
+    log_io.flush
 
-  status = system(*cmd)
+    status = system(*cmd, out: log_io, err: log_io)
+    if status
+      @logger.info "ok"
+      mp3_path
+    else
+      @logger.error "mp3 encoding Failed ;("
+      nil
+    end
+  end.compact
+
+  @logger.info "==> Concatenating MP3"
+  single_mp3_path = File.join(target_dir, 'all.mp3')
+  playlist = Tempfile.new("agqr-#{pubdate_str}-#{$$}-mp3.txt")
+  playlist.puts mp3_paths.map { |_| "file '#{_}'" }.join("\n")
+  playlist.flush
+  cmd = ["ffmpeg", "-f", "concat", "-i", playlist.path, "-c", "copy", single_mp3_path]
+  @logger.info "#{cmd.join(' ')}"
+  log_io.puts "=> #{safe_name}: #{cmd.inspect}"
+  log_io.flush
+
+  status = system(*cmd, out: log_io, err: log_io)
   if status
-    puts "  * Done!"
-    mp3_path
+    @logger.info "ok"
   else
-    puts "  * Failed ;("
+    @logger.error "mp3 concat Failed ;("
     nil
   end
-end.compact
 
-puts "==> Concatenating MP3"
-single_mp3_path = File.join(target_dir, 'all.mp3')
-playlist = Tempfile.new("agqr-#{pubdate_str}-#{$$}-mp3.txt")
-playlist.puts mp3_paths.map { |_| "file '#{_}'" }.join("\n")
-playlist.flush
-cmd = ["ffmpeg", "-f", "concat", "-i", playlist.path, "-c", "copy", single_mp3_path]
-status = system(*cmd)
-if status
-  puts "  * Done!"
-else
-  puts "  * Failed ;("
-  nil
+  @logger.info "==> Concatenating FLV"
+  single_mp4_path = File.join(target_dir, 'all.mp4')
+  playlist = Tempfile.new("agqr-#{pubdate_str}-#{$$}-mp4.txt")
+  playlist.puts flv_paths.map { |_| "file '#{_}'" }.join("\n")
+  playlist.flush
+  cmd = ["ffmpeg", "-f", "concat", "-i", playlist.path, "-vcodec", "libx264", "-acodec", "libfaac", "-b:a", "64k", single_mp4_path]
+  @logger.info "#{cmd.join(' ')}"
+  log_io.puts "=> #{safe_name}: #{cmd.inspect}"
+  log_io.flush
+
+  status = system(*cmd, out: log_io, err: log_io)
+  if status
+    @logger.info "ok"
+  else
+    @logger.error "FLV->MP4 Failed ;("
+    nil
+  end
 end
 
-puts "==> Concatenating FLV"
-single_mp4_path = File.join(target_dir, 'all.mp4')
-playlist = Tempfile.new("agqr-#{pubdate_str}-#{$$}-mp4.txt")
-playlist.puts flv_paths.map { |_| "file '#{_}'" }.join("\n")
-playlist.flush
-cmd = ["ffmpeg", "-f", "concat", "-i", playlist.path, "-vcodec", "libx264", "-acodec", "libfaac", "-b:a", "64k", single_mp4_path]
-status = system(*cmd)
-if status
-  puts "  * Done!"
-else
-  puts "  * Failed ;("
-  nil
-end
-
-puts "==> Generating metadata"
+@logger.info "==> Generating metadata"
 meta_path = File.join(target_dir, 'meta.json')
 meta = {
   host: HOSTNAME,
@@ -324,15 +323,15 @@ if prog
     }
   )
 end
-pp meta
+@logger.info meta.inspect
 File.write meta_path, "#{meta.to_json}\n"
 
-puts "==> Uploading to S3"
+@logger.info "==> Uploading to S3"
 if S3_BUCKET && S3_REGION
   if S3_ACCESS_KEY_ID && S3_SECRET_ACCESS_KEY
-    s3 = Aws::S3::Client.new(region: S3_REGION, credentials: Aws::Credentials.new(S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY))
+    s3 = Aws::S3::Client.new(region: S3_REGION, credentials: Aws::Credentials.new(S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY), logger: @logger)
   else
-    s3 = Aws::S3::Client.new(region: S3_REGION)
+    s3 = Aws::S3::Client.new(region: S3_REGION, logger: @logger)
   end
 
   s3_key_base = "#{S3_PREFIX}/#{safe_name}/work/#{pubdate_str}/#{HOSTNAME}"
@@ -340,8 +339,8 @@ if S3_BUCKET && S3_REGION
   flv_paths.each do |_|
     open(_, 'r') do |io|
       key = "#{s3_key_base}/#{File.basename(_)}"
-      puts "  * #{_} => s3://#{S3_BUCKET}/#{key} @ #{S3_REGION}"
-      p s3.put_object(
+      @logger.info "#{_} => s3://#{S3_BUCKET}/#{key} @ #{S3_REGION}"
+      s3.put_object(
         bucket: S3_BUCKET,
         key: key,
         body: io,
@@ -353,8 +352,8 @@ if S3_BUCKET && S3_REGION
   mp3_paths.each do |_|
     open(_, 'r') do |io|
       key = "#{s3_key_base}/#{File.basename(_)}"
-      puts "  * #{_} => s3://#{S3_BUCKET}/#{key} @ #{S3_REGION}"
-      p s3.put_object(
+      @logger.info "#{_} => s3://#{S3_BUCKET}/#{key} @ #{S3_REGION}"
+      s3.put_object(
         bucket: S3_BUCKET,
         key: key,
         body: io,
@@ -366,8 +365,8 @@ if S3_BUCKET && S3_REGION
   if File.exist?(single_mp3_path)
     open(single_mp3_path, 'r') do |io|
       key = "#{s3_key_base}/#{File.basename(single_mp3_path)}"
-      puts "  * #{single_mp3_path} => s3://#{S3_BUCKET}/#{key} @ #{S3_REGION}"
-      p s3.put_object(
+      @logger.info "#{single_mp3_path} => s3://#{S3_BUCKET}/#{key} @ #{S3_REGION}"
+      s3.put_object(
         bucket: S3_BUCKET,
         key: key,
         body: io,
@@ -379,8 +378,8 @@ if S3_BUCKET && S3_REGION
   if File.exist?(single_mp4_path)
     open(single_mp4_path, 'r') do |io|
       key = "#{s3_key_base}/#{File.basename(single_mp4_path)}"
-      puts "  * #{single_mp4_path} => s3://#{S3_BUCKET}/#{key} @ #{S3_REGION}"
-      p s3.put_object(
+      @logger.info "#{single_mp4_path} => s3://#{S3_BUCKET}/#{key} @ #{S3_REGION}"
+      s3.put_object(
         bucket: S3_BUCKET,
         key: key,
         body: io,
@@ -391,8 +390,8 @@ if S3_BUCKET && S3_REGION
 
   open(meta_path, 'r') do |io|
     key = "#{s3_key_base}/#{File.basename(meta_path)}"
-    puts "  * #{meta_path} => s3://#{S3_BUCKET}/#{key} @ #{S3_REGION}"
-    p s3.put_object(
+    @logger.info "#{meta_path} => s3://#{S3_BUCKET}/#{key} @ #{S3_REGION}"
+    s3.put_object(
       bucket: S3_BUCKET,
       key: key,
       body: io,
@@ -401,16 +400,16 @@ if S3_BUCKET && S3_REGION
   end
 
   vote = rand(1000)
-  puts " * Vote #{vote}"
+  @logger.info " * Vote #{vote}"
   key = "#{s3_key_base}/vote.txt"
-  p s3.put_object(
+  s3.put_object(
     bucket: S3_BUCKET,
     key: key,
     body: vote.to_s,
     content_type: 'text/plain',
   )
 else
-  puts "  * Skipping"
+  @logger.info "Skipping"
 end
 
 FileUtils.remove_entry_secure(target_dir)
@@ -421,4 +420,4 @@ else
   tweet "agqr.#{name}.done: #{pubdate.rfc2822}"
 end
 
-
+@logger.info "Done!"
