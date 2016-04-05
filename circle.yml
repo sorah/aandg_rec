@@ -12,8 +12,8 @@ dependencies:
     - docker login -u "${DOCKER_USER}" -p "${DOCKER_PASSWORD}" -e "${DOCKER_EMAIL}" https://quay.io
     - mkdir -p ~/docker
     - if [[ -e ~/docker/cache.tar ]]; then docker load -i ~/docker/cache.tar; fi
-    - docker pull quay.io/sorah/rbenv:2.2
-    - BASE_ID="$(docker inspect -f '{{.Id}}' quay.io/sorah/rbenv:2.2)"; if [[ "_${BASE_ID}" != "_$(cat ~/docker/cache.id)" ]]; then docker save quay.io/sorah/rbenv:2.2 > ~/docker/cache.tar && echo "${BASE_ID}" > ~/docker/cache.id; fi
+    - docker pull quay.io/sorah/rbenv:2.3
+    - BASE_ID="$(docker inspect -f '{{.Id}}' quay.io/sorah/rbenv:2.3)"; if [[ "_${BASE_ID}" != "_$(cat ~/docker/cache.id)" ]]; then docker save quay.io/sorah/rbenv:2.3 > ~/docker/cache.tar && echo "${BASE_ID}" > ~/docker/cache.id; fi
     - docker pull quay.io/sorah/aandg_rec:latest
 
 test:
