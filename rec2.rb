@@ -116,6 +116,8 @@ ALLOW_EARLY_EXIT = (ENV['AGQR_EARLY_EXIT_ALLOWANCE'] || config['allow_early_exit
 HOSTNAME = (ENV['AGQR_HOSTNAME'] || Socket.gethostname)
 TIMEOUT = (ENV['AGQR_TIMEOUT'] || config['timeout'] || 10).to_i
 
+raise 'specify s3_bucket and s3_region' unless S3_BUCKET && S3_REGION
+
 if start
   if start.size == 4
     h,m = start[0,2].to_i, start[2,2].to_i
