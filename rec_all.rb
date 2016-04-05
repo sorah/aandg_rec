@@ -10,6 +10,7 @@ require 'sigdump/setup'
 require 'sleepy_penguin'
 require 'logger'
 
+$stdout.sync = true
 
 module Aandg
   class Scheduler
