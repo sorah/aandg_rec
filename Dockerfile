@@ -1,6 +1,9 @@
 FROM quay.io/sorah/rbenv:2.3
 MAINTAINER sorah.jp
 
+RUN flaggie media-video/ffmpeg +mp3 +x264 +faac && \
+  CONFIG_PROTECT_MASK="/etc" dockemerge -v media-video/ffmpeg media-video/rtmpdump && \
+
 RUN mkdir /app
 WORKDIR /app
 
