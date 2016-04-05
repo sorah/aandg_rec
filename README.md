@@ -6,6 +6,12 @@
 - Store in Amazon S3
 - High availability, run multiple instances for backup
 
+## Requirements
+
+- Linux (depending on timerfd, eventfd, and epoll)
+- rtmpdump
+- ffmpeg (aac, x264, mp3, flv)
+
 ## Usage
 
 After configuration, run
