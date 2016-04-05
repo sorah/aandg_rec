@@ -15,6 +15,8 @@ require 'json'
 require 'fileutils'
 require 'socket'
 
+$stdout.sync = true
+
 module Aandg
   class S3Cleaner
     def initialize(config, hostname = nil)
