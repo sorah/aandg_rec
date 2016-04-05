@@ -1,0 +1,5 @@
+recorded
+vendor
+.bundle/
+config.yml
+log/
