@@ -27,18 +27,20 @@ module Aandg
       @s3_access_key_id = config['aws_access_key_id']
       @s3_secret_access_key =  config['aws_secret_access_key']
       @url_base = ENV['AGQR_URL_BASE'] || config['http_base'] || "http://localhost"
+      @logger = Logger.new($stdout)
+      @logger.progname = 's3_cleaner'
 
       raise ArgumentError unless @s3_region && @s3_bucket
     end
 
-    attr_reader :hostname, :s3_region, :s3_bucket, :s3_prefix, :url_base
+    attr_reader :hostname, :s3_region, :s3_bucket, :s3_prefix, :url_base, :logger
 
     def s3
       @s3 ||= begin
         if @s3_access_key_id && @s3_secret_access_key
-          Aws::S3::Client.new(region: @s3_region, credentials: Aws::Credentials.new(@s3_access_key_id, @s3_secret_access_key), logger: Logger.new($stdout))
+          Aws::S3::Client.new(region: @s3_region, credentials: Aws::Credentials.new(@s3_access_key_id, @s3_secret_access_key), logger: logger)
         else
-          Aws::S3::Client.new(region: @s3_region, logger: Logger.new($stdout))
+          Aws::S3::Client.new(region: @s3_region, logger: logger)
         end
       end
     end
@@ -69,6 +71,12 @@ module Aandg
         update_index program_prefix
         update_feed program_prefix
       end
+    rescue Interrupt, SignalException
+      raise
+    rescue Exception => e
+      logger.error "!!! encountered error: #{$!.inspect}"
+      $!.backtrace.each {|bt| logger.error "  #{bt}" }
+      raise
     end
 
     def update_index(program_prefix)
@@ -110,60 +118,60 @@ module Aandg
     end
 
     def run_on_work_prefix(work_prefix)
-      puts "=> #{work_prefix.prefix}"
+      logger.info "=> #{work_prefix.prefix}"
       unless work_prefix.target?
-        puts " * Not a target, skip"
+        logger.info " * Not a target, skip"
         return false
       end
 
       if work_prefix.host_works.empty?
-        puts " * WARN: no host works, skip"
+        logger.info " * WARN: no host works, skip"
         return false
       end
 
       worker = work_prefix.worker
       if worker && worker != hostname
-        puts " * #{worker.inspect} is working on, skipping"
+        logger.info " * #{worker.inspect} is working on, skipping"
         return false
       elsif !worker
         unless work_prefix.won_vote?
-          puts " * #{work_prefix.vote_winner.host.inspect} won a vote, skipping"
+          logger.info " * #{work_prefix.vote_winner.host.inspect} won a vote, skipping"
           return false
         end
       end
 
       program_prefix = work_prefix.program_prefix
 
-      puts " * Declearing work"
+      logger.info " * Declearing work"
       work_prefix.declare_work!
 
       meta_prefix = "#{program_prefix.prefix}#{work_prefix.pubdate_str}.json"
       begin
         meta_obj = s3.head_object(bucket: s3_bucket, key: meta_prefix)
         if meta_obj
-          puts " * WARN: meta json already exists! skipping"
+          logger.info " * WARN: meta json already exists! skipping"
           return false
         end
       rescue Aws::S3::Errors::NoSuchKey, Aws::S3::Errors::NotFound
       end
 
       best_work = work_prefix.best_work
-      puts " * best work is #{best_work.prefix.inspect}"
+      logger.info " * best work is #{best_work.prefix.inspect}"
 
-      puts " * Extracting best mp3 & mp4 to #{program_prefix.prefix.inspect}"
+      logger.info " * Extracting best mp3 & mp4 to #{program_prefix.prefix.inspect}"
       best_work.extract_works("#{program_prefix.prefix}rec/")
 
       rec_prefix = "#{program_prefix.prefix}rec/#{work_prefix.pubdate_str}/"
 
       if best_work.error_count > 0
-        puts " * best work's error count is #{best_work.error_count}, keeping other host's work"
+        logger.info " * best work's error count is #{best_work.error_count}, keeping other host's work"
         work_prefix.host_works.each do |host_work|
           new_prefix = "#{rec_prefix}#{host_work.host}/"
-          puts " - #{host_work.prefix.inspect} => #{new_prefix.inspect}"
+          logger.info " - #{host_work.prefix.inspect} => #{new_prefix.inspect}"
           host_work.move_to!(new_prefix)
         end
       else
-        puts " * removing host works"
+        logger.info " * removing host works"
         work_prefix.host_works.each do |x|
           if x == best_work
             new_prefix = "#{rec_prefix}#{x.host}/"
