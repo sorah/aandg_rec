@@ -373,17 +373,8 @@ module Aandg
 
       def invoke_recorder(start, prog)
         logger.info "spawning rec2.rb for #{prog.inspect}"
-        if @log_dir
-          log_io = open(@log_dir.join("recorder.#{start.to_i}.log"), 'w')
-          log_io.puts "=> #{start.inspect} #{prog.inspect}"
-          log_io.flush
-          opts = {out: log_io, err: log_io}
-        else
-          opts = {}
-        end
         title = prog.repeat? ? "#{prog.title}-repeat" : prog.title
-        pid = spawn("#{__dir__}/rec2.rb", title, prog.duration_sec.to_s, start.to_i.to_s, opts)
-        log_io.close if log_io
+        pid = spawn("#{__dir__}/rec2.rb", title, prog.duration_sec.to_s, start.to_i.to_s)
         logger.info "spawned pid=#{pid} for #{prog.inspect} (#{start.to_i})"
         @pids_lock.synchronize do
           @pids[pid] = prog
@@ -467,16 +458,7 @@ module Aandg
         end
         logger.info "performing clean..."
 
-        if @log_dir
-          log_io = open(@log_dir.join("cleaner.log"), 'a')
-          log_io.puts "=> run at #{Time.now.to_s}"
-          log_io.flush
-          opts = {out: log_io, err: log_io}
-        else
-          opts = {}
-        end
-        pid = spawn("#{__dir__}/s3_cleanup.rb", opts)
-        log_io.close if log_io
+        pid = spawn("#{__dir__}/s3_cleanup.rb")
         logger.info "spawned pid=#{pid}"
         @lock.synchronize do
           @pid = pid
