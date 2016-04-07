@@ -42,7 +42,7 @@ else
                       end
 
       puts " * #{work.prefix} (#{winner_str}, #{best_work_str})"
-      if !work.target
+      if !work.target?
         puts "   (not target yet)"
       end
 
