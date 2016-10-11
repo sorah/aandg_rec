@@ -147,7 +147,7 @@ module Aandg
       # mapping of week of days
       headings = table.at('thead').search('td, th').map(&:inner_text)
       day_map = Hash[headings.map.with_index do |day_ja, i|
-        wday = case day_ja.gsub(/\s|　/, '')
+        wday = case day_ja.gsub(/\r|\n|\s|\u00A0|　/, '')
         when "月曜日"
           1
         when "火曜日"
@@ -165,7 +165,7 @@ module Aandg
         when ""
           -1
         else
-          raise ParseError, "Unknown heading at #{i}: #{day_ja.inspect}"
+          raise ParseError, "Unknown heading at #{i}: #{day_ja.b.inspect}"
         end
         [i, wday]
       end]
@@ -307,5 +307,19 @@ module Aandg
         end
       end
     end
+  end
+end
+
+if $0 == __FILE__
+  tt = Aandg::Timetable.streaming
+  tt.days.each do |day, programs|
+    puts "## day #{day}"
+    puts
+
+    programs.each do |pg|
+      puts "- `#{pg.inspect}`"
+    end
+
+    puts
   end
 end
